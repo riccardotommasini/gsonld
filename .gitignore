@@ -1,4 +1,4 @@
-*.idea
-*.idl
+.idea/
+*.iml
 .DS_Store
 target/
