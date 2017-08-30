@@ -8,8 +8,11 @@ import java.lang.annotation.*;
 @Inherited
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface Prefixes {
+public @interface Object {
 
-    Prefix[] value();
+    boolean expanded() default false;
 
+    boolean flattened() default false;
+
+    boolean framed() default false;
 }

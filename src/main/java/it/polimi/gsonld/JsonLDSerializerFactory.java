@@ -2,7 +2,7 @@ package it.polimi.gsonld;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import it.polimi.gsonld.annotations.JsonLD;
+import it.polimi.gsonld.annotations.Object;
 import org.reflections.Reflections;
 
 import java.util.HashMap;
@@ -22,7 +22,7 @@ public class JsonLDSerializerFactory {
 
     public static void init() {
         Reflections reflections = new Reflections("it.polimi.jsonld");
-        Set<Class<?>> annotated = reflections.getTypesAnnotatedWith(JsonLD.class);
+        Set<Class<?>> annotated = reflections.getTypesAnnotatedWith(Object.class);
         annotated.forEach(c -> register(c));
     }
 
@@ -32,7 +32,7 @@ public class JsonLDSerializerFactory {
     }
     public static void register(String package_name) {
         Reflections reflections = new Reflections(package_name);
-        Set<Class<?>> annotated = reflections.getTypesAnnotatedWith(JsonLD.class);
+        Set<Class<?>> annotated = reflections.getTypesAnnotatedWith(Object.class);
         annotated.forEach(c -> register(c));
     }
 

@@ -14,8 +14,6 @@ public @interface Property {
 
     String value();
 
-    String alias() default "[Unassigned]";
-
     String type() default "[Unassigned]";
 
 

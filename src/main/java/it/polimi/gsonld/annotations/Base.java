@@ -9,9 +9,9 @@ import java.lang.annotation.Target;
  * Created by riccardo on 24/08/2017.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.FIELD, ElementType.TYPE, ElementType.METHOD})
-public @interface Type {
+@Target(ElementType.TYPE)
+public @interface Base {
 
-    String value() default "@id";
+    String value() default "http://schema.org/";
 
 }

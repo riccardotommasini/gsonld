@@ -1,16 +1,15 @@
 package it.polimi.gsonld.annotations;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import java.lang.annotation.*;
 
 /**
  * Created by riccardo on 24/08/2017.
+ * Used to expand properties and values in @type with a common prefix IRI.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface BaseVocab {
+@Inherited
+public @interface Vocab {
 
     String value() default "http://schema.org/";
 
