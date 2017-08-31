@@ -1,6 +1,7 @@
 package it.polimi.gsonld.tests.playground.recipes;
 
 import it.polimi.gsonld.annotations.Alias;
+import it.polimi.gsonld.annotations.As;
 import it.polimi.gsonld.annotations.Property;
 import it.polimi.gsonld.annotations.Type;
 
@@ -18,6 +19,7 @@ public class Step {
 
     @Property("http://rdf.data-vocabulary.org/#step")
     @Type("xsd:integer")
+    @As
     public int step;
 
     public Step(int number, String description) {

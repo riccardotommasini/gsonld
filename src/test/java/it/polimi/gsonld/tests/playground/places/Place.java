@@ -12,6 +12,7 @@ import it.polimi.gsonld.annotations.Object;
 public class Place {
 
     @Property("http://schema.org/name")
+    @As
     public String name = "The Empire State Building";
 
     @Property("http://schema.org/description")
@@ -20,10 +21,12 @@ public class Place {
 
     @Type
     @Property("http://schema.org/image")
+    @As
     public String image = "http://www.civil.usherbrooke.ca/cours/gci215a/empire-state-building.jpg";
 
     private Geo geo = new Geo();
 
+    @As
     @Property("http://schema.org/geo")
     public Geo getGeo(){
         return geo;

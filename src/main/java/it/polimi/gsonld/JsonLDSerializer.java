@@ -17,7 +17,7 @@ import static it.polimi.gsonld.JsonldUtils.*;
 public class JsonLDSerializer<T> implements JsonSerializer<T> {
 
     private HashMap<String, String> prefixes, aliases;
-    private HashMap<String, String> inverse_prefix, inverse_aliases;
+    private HashMap<String, String> inverse_aliases;
     private HashMap<String, Set<String>> properties;
     private HashMap<String, String> reference_names;
 
@@ -26,7 +26,6 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
     public JsonLDSerializer() {
         this.prefixes = new HashMap<>();
         this.aliases = new HashMap<>();
-        this.inverse_prefix = new HashMap<>();
         this.inverse_aliases = new HashMap<>();
         this.properties = new HashMap<>();
         this.reference_names = new HashMap<>();
@@ -69,11 +68,11 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
 
         extractAliases(c, context);
 
-        Arrays.stream(c.getMethods()).filter(this::isGetter).collect(Collectors.toList())
-                .forEach(m -> updateContext(c, context, m, m.getName(), getPropertyName(m), m.getReturnType()));
+        Arrays.stream(c.getMethods()).filter(this::isGetter).filter(m -> !"getClass".equals(m.getName())).collect(Collectors.toList())
+                .forEach(m -> updateContext(c, context, m, m.getName(), getPropertyName(m), m));
 
         Arrays.stream(c.getFields()).forEach((Field f) ->
-                updateContext(c, context, f, f.getName(), getPropertyName(f), f.getType()));
+                updateContext(c, context, f, f.getName(), getPropertyName(f), f));
 
         if (c.isAnnotationPresent(Base.class) && isURI(c.getAnnotation(Base.class).value())) {
             if (!context.isJsonObject() || ((JsonObject) context).size() == 0) {
@@ -92,15 +91,86 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
         return context;
     }
 
+    private void updateContext(Class<?> aClass, JsonElement context, AccessibleObject m, String name, String property, AccessibleObject a) {
+
+        String reference_name = property;
+
+        if (m.isAnnotationPresent(Property.class)) {
+
+            String field_uri = m.getAnnotation(Property.class).value();
+
+            if (m.isAnnotationPresent(Type.class)) {
+                JsonObject p = new JsonObject();
+
+                String property_type = m.getAnnotation(Type.class).value();
+
+                p.addProperty(JSONLD_TYPE, property_type);
+                p.addProperty(JSONLD_ID, field_uri);
+
+                checkPrefix(property_type, aClass);
+
+                if (context.isJsonPrimitive()) {
+
+                } else if (context.isJsonObject() && !((JsonObject) context).has(property_type)) {
+
+                    ((JsonObject) context).add(reference_name, p);
+                }
+
+            } else {
+                if (context.isJsonPrimitive()) {
+
+                } else if (context.isJsonObject() && !((JsonObject) context).has(reference_name)) {
+                    if (!field_uri.equals(reference_name) && (!isAliased(field_uri) || isPrefixed(field_uri))) {
+                        ((JsonObject) context).addProperty(reference_name, field_uri);
+                    }
+                }
+            }
+        }
+
+        if (m.isAnnotationPresent(Prefix.class) && isPrefix(m.getAnnotation(Prefix.class).value())) {
+            String prefix = m.getAnnotation(Prefix.class).value();
+            reference_name = prefix + ":" + reference_name;
+            if (m.isAnnotationPresent(Type.class)) {
+                JsonObject p = new JsonObject();
+
+                String property_type = m.getAnnotation(Type.class).value();
+
+                p.addProperty(JSONLD_TYPE, property_type);
+
+                checkPrefix(property_type, aClass);
+
+                if (context.isJsonPrimitive()) {
+
+                } else if (context.isJsonObject()) {
+                    ((JsonObject) context).add(reference_name, p);
+                }
+            }
+        }
+
+        reference_names.put(name, reference_name);
+        if (!a.isAnnotationPresent(Graph.class) || (!a.isAnnotationPresent(Metadata.class) && aClass.isAnnotationPresent(Graph.class))) {
+            Set<String> s = properties.containsKey(reference_name) ? properties.get(reference_name) : new HashSet<>();
+            s.add(name);
+            properties.put(reference_name, s);
+        }
+    }
+
     private JsonElement getJsonElement(java.lang.Object t, Class<?> aClass, JsonObject o, JsonElement context) {
 
         Map<String, JsonArray> properties_objects = new HashMap<>();
 
         String type = new String();
-        String id = new String();
 
         if (!aClass.isAnnotationPresent(Object.class)) {
             buildContext(t, aClass, context);
+        }
+
+        if (aClass.isAnnotationPresent(Graph.class)) {
+            Graph annotation = aClass.getAnnotation(Graph.class);
+            String id = !"[unassigned]".equals(annotation.id()) ? annotation.id() : "_b" + Math.round(Math.random());
+            o.addProperty(JSONLD_ID, id);
+            o.addProperty(JSONLD_TYPE, annotation.type());
+            o.add(JSONLD_GRAPH, new JsonArray());
         }
 
         if (aClass.isAnnotationPresent(Type.class)) {
@@ -115,57 +185,56 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
 
         }
 
-        Arrays.stream(aClass.getMethods()).filter(this::isGetter).collect(Collectors.toList()).forEach(
+        Arrays.stream(aClass.getMethods()).filter(this::isGetter).filter(m -> !"getClass".equals(m.getName())).collect(Collectors.toList()).forEach(
                 m -> {
                     String property = reference_names.containsKey(m.getName()) ? reference_names.get(m.getName()) : getPropertyName(m);
                     getMethodValue(t, o, m, property, context);
                 });
 
-        Field[] fields = aClass.getFields();
 
-        boolean foundId = false;
+        Arrays.stream(aClass.getFields()).forEach(f -> {
 
-        for (int i = 0; i < fields.length; i++) {
+            if (aClass.isAnnotationPresent(Graph.class) && f.isAnnotationPresent(Metadata.class)) {
+                //TODO process field as metadata
+            } else if (aClass.isAnnotationPresent(Graph.class)) {
+                JsonArray g = o.getAsJsonArray(JSONLD_GRAPH);
+                g.add(buildProperty(t, new JsonObject(), context, new HashMap<>(), f));
+            } else if (f.isAnnotationPresent(Graph.class)) {
+                //TODO add {field} to class @graph
+                String id = f.getAnnotation(Graph.class).id();
+                String tt = f.getAnnotation(Graph.class).type();
 
-            Field f = fields[i];
-
-            if (!foundId && f.isAnnotationPresent(Id.class)) {
-                id = f.getAnnotation(Id.class).value();
-                foundId = true;
-                o.addProperty(JSONLD_ID, id);
-            }
-
-            String name = f.getName();
-            String prop_name = reference_names.containsKey(name) ? reference_names.get(name) : name;
-
-            if (properties.containsKey(prop_name) && properties.get(prop_name).size() > 1) {
-                try {
-                    if (properties_objects.containsKey(prop_name)) {
-                        JsonArray array = properties_objects.get(prop_name);
-                        if (f.getType().isAssignableFrom(String.class)) {
-                            array.add((String) f.get(t));
-                        } else if (f.getType().isAssignableFrom(Boolean.class)) {
-                            array.add((Boolean) f.get(t));
-                        } else {
-                            array.add(f.get(t).toString());
-                        }
-                    } else {
-                        JsonArray array = new JsonArray();
-                        if (f.getType().isAssignableFrom(String.class)) {
-                            array.add((String) f.get(t));
-                        } else if (f.getType().isAssignableFrom(Boolean.class)) {
-                            array.add((Boolean) f.get(t));
-                        } else {
-                            array.add(f.get(t).toString());
-                        }
-                        properties_objects.put(prop_name, array);
-                    }
-                } catch (IllegalAccessException e) {
-                    e.printStackTrace();
+                if (!o.has(JSONLD_GRAPH)) {
+                    o.add(JSONLD_GRAPH, new JsonArray());
                 }
+
+                JsonArray g = o.getAsJsonArray(JSONLD_GRAPH);
+
+                boolean found = false;
+                for (int i = 0; i < g.size(); i++) {
+                    JsonObject elem = g.get(i).getAsJsonObject();
+                    if (!found && elem.get(JSONLD_ID).getAsString().equals(id)) {
+                        found = true;
+                        //TODO probably properties_objects should be persisted to handle arrays in further elements
+                        buildProperty(t, elem, context, new HashMap<>(), f);
+                        if (!elem.has(JSONLD_TYPE)) {
+                            elem.addProperty(JSONLD_TYPE, tt);
+                        }
+                    }
+                }
+
+                if (!found) {
+                    JsonObject p = buildProperty(t, new JsonObject(), context, new HashMap<>(), f);
+                    p.addProperty(JSONLD_TYPE, tt);
+                    p.addProperty(JSONLD_ID, id);
+                    g.add(p);
+                }
+
             } else {
-                getFieldValue(t, o, f, prop_name, context);
+                buildProperty(t, o, context, properties_objects, f);
             }
+
+
 
 
             /* else if (f.isAnnotationPresent(Property.class)) {
@@ -193,83 +262,52 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
             } else {
                 getFieldValue(t, o, f, null);
             }*/
-        }
+        });
 
-        properties_objects.forEach((k, v) -> {
+        properties_objects.forEach((k, v) ->
+
+        {
             o.add(k, v);
         });
 
         return o;
     }
 
-    private void updateContext(Class<?> aClass, JsonElement context, AccessibleObject m, String name, String property, Class<?> type) {
+    private JsonObject buildProperty(java.lang.Object t, JsonObject o, JsonElement context, Map<String, JsonArray> properties_objects, Field f) {
+        String name = f.getName();
+        String prop_name = reference_names.containsKey(name) ? reference_names.get(name) : name;
 
-        if ("getClass".equals(name)) {
-            return;
-        }
-
-        String reference_name = property;
-
-        if (m.isAnnotationPresent(Property.class)) {
-
-            String field_uri = m.getAnnotation(Property.class).value();
-
-            if (m.isAnnotationPresent(Type.class)) {
-                JsonObject p = new JsonObject();
-
-                String property_type = m.getAnnotation(Type.class).value();
-
-                p.addProperty(JSONLD_TYPE, property_type);
-                p.addProperty(JSONLD_ID, field_uri);
-
-                checkPrefix(property_type, aClass);
-
-                if (context.isJsonPrimitive()) {
-
-                } else if (context.isJsonObject()) {
-                    ((JsonObject) context).add(reference_name, p);
-                }
-
-            } else {
-                if (context.isJsonPrimitive()) {
-
-                } else if (context.isJsonObject()) {
-                    if (!isAliased(field_uri) || isPrefixed(field_uri)) {
-                        ((JsonObject) context).addProperty(reference_name, field_uri);
+        if (properties.containsKey(prop_name) && properties.get(prop_name).size() > 1) {
+            try {
+                if (properties_objects.containsKey(prop_name)) {
+                    JsonArray array = properties_objects.get(prop_name);
+                    if (f.getType().isAssignableFrom(String.class)) {
+                        array.add((String) f.get(t));
+                    } else if (f.getType().isAssignableFrom(Boolean.class)) {
+                        array.add((Boolean) f.get(t));
+                    } else {
+                        array.add(f.get(t).toString());
                     }
+                } else {
+                    JsonArray array = new JsonArray();
+                    if (f.getType().isAssignableFrom(String.class)) {
+                        array.add((String) f.get(t));
+                    } else if (f.getType().isAssignableFrom(Boolean.class)) {
+                        array.add((Boolean) f.get(t));
+                    } else {
+                        array.add(f.get(t).toString());
+                    }
+                    properties_objects.put(prop_name, array);
                 }
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
             }
+        } else {
+            getFieldValue(t, o, f, prop_name, context);
         }
-
-        if (m.isAnnotationPresent(Prefix.class) && isPrefix(m.getAnnotation(Prefix.class).value())) {
-            String prefix = m.getAnnotation(Prefix.class).value();
-            reference_name = prefix + ":" + reference_name;
-            if (m.isAnnotationPresent(Type.class)) {
-                JsonObject p = new JsonObject();
-
-                String property_type = m.getAnnotation(Type.class).value();
-
-                p.addProperty(JSONLD_TYPE, property_type);
-
-                checkPrefix(property_type, aClass);
-
-                if (context.isJsonPrimitive()) {
-
-                } else if (context.isJsonObject()) {
-                    ((JsonObject) context).add(reference_name, p);
-                }
-            }
-        }
-
-        updateReferenceMaps(name, reference_name);
+        return o;
     }
 
-    private void updateReferenceMaps(String name, String reference_name) {
-        Set<String> s = properties.containsKey(reference_name) ? properties.get(reference_name) : new HashSet<>();
-        s.add(name);
-        properties.put(reference_name, s);
-        reference_names.put(name, reference_name);
-    }
 
     private void extractAliases(Class<?> tclass, JsonElement context) {
         boolean has_alias = tclass.isAnnotationPresent(Alias.class);
@@ -344,7 +382,7 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
         return aliases.containsKey(p);
     }
 
-    private String getFieldValue(java.lang.Object t, JsonObject o, Field f, String property_name, JsonElement context) {
+    private JsonObject getFieldValue(java.lang.Object t, JsonObject o, Field f, String property_name, JsonElement context) {
         try {
             Class<?> type = f.getType();
             java.lang.Object val = f.get(t);
@@ -356,7 +394,7 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
         }
     }
 
-    private String getMethodValue(java.lang.Object t, JsonObject o, Method f, String method, JsonElement context) {
+    private JsonObject getMethodValue(java.lang.Object t, JsonObject o, Method f, String method, JsonElement context) {
         try {
             if (f.getName().equals("getClass")) {
                 return null;
@@ -383,10 +421,11 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
 
         String property = f.isAnnotationPresent(Property.class) ? f.getAnnotation(Property.class).value() : method;
 
-        property = (f.isAnnotationPresent(As.class) && !f.getAnnotation(As.class).value().equals("[Unassigned]")) ?
-                f.getAnnotation(As.class).value() : property;
+        if (f.isAnnotationPresent(As.class)) {
+            property = !f.getAnnotation(As.class).value().equals("[Unassigned]") ? f.getAnnotation(As.class).value() : method;
+        }
 
-        property = isURI(property) ? method : property;
+        //  property = isURI(property) ? method : property;
 
         if (!isURI(property) && !isPrefixed(property) && f.isAnnotationPresent(Prefix.class)) {
             String prefix = f.getAnnotation(Prefix.class).value();
@@ -401,10 +440,10 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
     private String getPropertyName(Field f) {
         String property = f.isAnnotationPresent(Property.class) ? f.getAnnotation(Property.class).value() : f.getName();
 
-        property = (f.isAnnotationPresent(As.class) && !f.getAnnotation(As.class).value().equals("[Unassigned]")) ?
-                f.getAnnotation(As.class).value() : property;
-
-        property = isURI(property) ? f.getName() : property;
+        if (f.isAnnotationPresent(As.class)) {
+            property = (!f.getAnnotation(As.class).value().equals("[Unassigned]")) ? f.getAnnotation(As.class).value() : f.getName();
+        }
+        //  property = isURI(property) ? f.getName() : property;
 
         if (!isURI(property) && !isPrefixed(property) && f.isAnnotationPresent(Prefix.class)) {
             String prefix = f.getAnnotation(Prefix.class).value();
@@ -416,7 +455,7 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
         return property;
     }
 
-    private String accessValue(JsonObject o, JsonElement context, Class<?> type, String property, java.lang.Object val) {
+    private JsonObject accessValue(JsonObject o, JsonElement context, Class<?> type, String property, java.lang.Object val) {
 
         if (type.isArray()) {
             Class<?> componentType = type.getComponentType();
@@ -452,7 +491,7 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
             JsonElement jsonElement = getJsonElement(val, val.getClass(), new JsonObject(), context);
             o.add(property, jsonElement);
         }
-        return property;
+        return o;
 
     }
 
@@ -484,7 +523,6 @@ public class JsonLDSerializer<T> implements JsonSerializer<T> {
             e.printStackTrace();
         }
     }
-
 
     private JsonArray getStringValueList(java.lang.Object t, List<Field> fields) throws IllegalAccessException {
         JsonArray list = new JsonArray();

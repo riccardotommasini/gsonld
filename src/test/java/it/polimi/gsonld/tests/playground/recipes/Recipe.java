@@ -1,9 +1,7 @@
 package it.polimi.gsonld.tests.playground.recipes;
 
-import it.polimi.gsonld.annotations.Alias;
+import it.polimi.gsonld.annotations.*;
 import it.polimi.gsonld.annotations.Object;
-import it.polimi.gsonld.annotations.Property;
-import it.polimi.gsonld.annotations.Type;
 
 /**
  * Created by riccardo on 24/08/2017.
@@ -16,6 +14,7 @@ import it.polimi.gsonld.annotations.Type;
 public class Recipe {
 
     @Property("http://rdf.data-vocabulary.org/#name")
+    @As
     public String name = "Mojito";
 
     @Property("ingredient")

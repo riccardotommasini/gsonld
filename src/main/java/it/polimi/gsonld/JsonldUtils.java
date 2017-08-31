@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
  */
 public class JsonldUtils {
 
+
     public static String JSONLD_TYPE = "@type";
     /**
      * Used to uniquely identify things that are being described in the document with IRIs or blank node identifiers. This keyword is described in section 5.3 Node Identifiers.
@@ -25,4 +26,12 @@ public class JsonldUtils {
 
     private static String uri_regex = "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
     public static Pattern uri_pattern = Pattern.compile(uri_regex);
+
+
+    public static class MediaTypes {
+        public static String base_uri = "http://www.w3.org/ns/json-ld#";
+        public static String FLATTENED = base_uri + "flattened";
+        public static String EXPANDED = base_uri + "xpanded";
+        public static String COMPACTED = base_uri + "compacted";
+    }
 }
